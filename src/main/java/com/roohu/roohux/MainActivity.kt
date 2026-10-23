@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(label("✦  YOUR UNIVERSE", 10f, pale, true))
         root.addView(header); addSpace(root, 20)
-        val scroll = ScrollView(this).apply { isFillViewport = true; verticalScrollBarEnabled = false }
+        val scroll = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = false }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
