@@ -1,5 +1,6 @@
 package com.roohu.roohux
 
+import android.app.Dialog
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.view.Gravity
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -47,6 +50,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = bg
         window.navigationBarColor = bg
+        window.decorView.systemUiVisibility = 0
         player = ExoPlayer.Builder(this).build()
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { runOnUiThread { refreshMini() } }
@@ -68,25 +72,26 @@ class MainActivity : ComponentActivity() {
     private fun addSpace(parent: LinearLayout, h: Int = 12) { parent.addView(View(this), LinearLayout.LayoutParams(1, dp(h))) }
     private fun dp(v: Int) = (resources.displayMetrics.density * v).toInt()
     private fun showShell() {
-        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(bg); setPadding(dp(16), dp(14), dp(16), dp(8)) }
+        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(20, 14, 38), bg, Color.rgb(8, 10, 20))); setPadding(dp(16), dp(14), dp(16), dp(8)) }
         setContentView(root)
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label("ROOHU", 27f, Color.WHITE, true))
         header.addView(label("X", 27f, violet, true))
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         header.addView(label("✦  YOUR UNIVERSE", 10f, pale, true))
-        root.addView(header); addSpace(root, 20)
+        root.addView(header); header.alpha = 0f; header.translationY = -dp(8).toFloat(); header.animate().alpha(1f).translationY(0f).setDuration(420).start(); addSpace(root, 20)
         val scroll = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = false }
-        content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)); alpha = 0f }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        content.animate().alpha(1f).setDuration(360).start()
         status = label("", 12f, pale)
         root.addView(status)
-        mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = shape(panel); setPadding(dp(14), dp(12), dp(14), dp(12)) }
+        mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(48, 31, 76), Color.rgb(29, 27, 49))).apply { cornerRadius = dp(20).toFloat(); setStroke(dp(1), Color.rgb(88, 65, 126)) }; setPadding(dp(14), dp(10), dp(10), dp(10)); elevation = dp(5).toFloat() }
         root.addView(mini); addSpace(root, 10)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("Discover", "Favorites", "Downloads", "About").forEach { tab ->
-            val item = label(tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Discover" -> showDiscover(); "Favorites" -> showFavorites(); "Downloads" -> showDownloads(); else -> showAbout() } } }
+            val item = label(if (tab == activeTab) "●  $tab" else tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Discover" -> showDiscover(); "Favorites" -> showFavorites(); "Downloads" -> showDownloads(); else -> showAbout() } } }
             nav.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
         root.addView(nav)
@@ -173,9 +178,9 @@ class MainActivity : ComponentActivity() {
         }
     }
     private fun card(heading: String, sub: String, action: () -> Unit) {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = shape(panel); setPadding(dp(15), dp(14), dp(15), dp(14)); setOnClickListener { action() } }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(37, 31, 59), panel)).apply { cornerRadius = dp(20).toFloat(); setStroke(dp(1), Color.rgb(54, 47, 76)) }; setPadding(dp(16), dp(15), dp(16), dp(15)); elevation = dp(2).toFloat(); isClickable = true; isFocusable = true; setOnClickListener { animate().scaleX(0.985f).scaleY(0.985f).setDuration(80).withEndAction { animate().scaleX(1f).scaleY(1f).setDuration(120).start(); action() }.start() } }
         box.addView(label(heading, 15f, Color.WHITE, true)); addSpace(box, 6); box.addView(label(sub, 12f, pale))
-        content.addView(box); addSpace(content, 10)
+        box.alpha = 0f; box.translationY = dp(10).toFloat(); content.addView(box); box.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(DecelerateInterpolator()).start(); addSpace(content, 10)
     }
     private fun play(url: String, name: String, type: String) {
         currentTitle = name; currentUrl = url; currentType = type
@@ -183,10 +188,58 @@ class MainActivity : ComponentActivity() {
         refreshMini(); message("Playing: $name")
         playerContainer?.let { (it.parent as? ViewGroup)?.removeView(it) }
         playerView?.player = null
-        playerContainer = FrameLayout(this).apply { background = shape(panel) }
-        playerView = PlayerView(this).apply { player = this@MainActivity.player; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) }
-        playerContainer!!.addView(playerView, FrameLayout.LayoutParams(-1, dp(if (type == "video") 230 else 100)))
+        playerContainer = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(47, 31, 72), panel)).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(91, 65, 130)) }
+            clipToOutline = true
+        }
+        playerView = PlayerView(this).apply {
+            player = this@MainActivity.player
+            useController = true
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            setControllerAutoShow(true)
+            setControllerHideOnTouch(true)
+        }
+        playerContainer!!.addView(playerView, FrameLayout.LayoutParams(-1, dp(if (type == "video") 250 else 112)))
+        val expand = TextView(this).apply {
+            text = "⛶"; textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = dp(16).toFloat() }
+            elevation = dp(5).toFloat(); setPadding(dp(10), dp(4), dp(10), dp(4))
+            contentDescription = "Open full screen player"
+            setOnClickListener { openFullScreenPlayer() }
+        }
+        playerContainer!!.addView(expand, FrameLayout.LayoutParams(dp(48), dp(44), Gravity.TOP or Gravity.END).apply { setMargins(0, dp(8), dp(8), 0) })
         content.addView(playerContainer, 0)
+        playerContainer!!.alpha = 0f
+        playerContainer!!.translationY = dp(12).toFloat()
+        playerContainer!!.animate().alpha(1f).translationY(0f).setDuration(300).start()
+    }
+    private fun openFullScreenPlayer() {
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val fullView = PlayerView(this).apply {
+            player = this@MainActivity.player
+            useController = true
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            setControllerAutoShow(true)
+            setControllerHideOnTouch(true)
+        }
+        frame.addView(fullView, FrameLayout.LayoutParams(-1, -1))
+        val close = TextView(this).apply {
+            text = "✕"; textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            background = GradientDrawable().apply { setColor(0x99000000.toInt()); cornerRadius = dp(24).toFloat() }
+            setPadding(dp(12), dp(8), dp(12), dp(8)); elevation = dp(8).toFloat()
+            contentDescription = "Exit full screen"
+            setOnClickListener { dialog.dismiss() }
+        }
+        frame.addView(close, FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.START).apply { setMargins(dp(14), dp(18), 0, 0) })
+        dialog.setContentView(frame)
+        dialog.setOnDismissListener { fullView.player = null }
+        dialog.show()
+        dialog.window?.setLayout(-1, -1)
+        dialog.window?.decorView?.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
     }
     private fun favorite(name: String, url: String, type: String) {
         val old = prefs.getString("favorites", "[]") ?: "[]"
