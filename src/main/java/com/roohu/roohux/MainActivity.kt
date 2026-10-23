@@ -13,6 +13,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -40,6 +42,10 @@ class MainActivity : ComponentActivity() {
     private var currentUrl = ""
     private var currentType = "audio"
     private var activeTab = "Home"
+    private val ticker = Handler(Looper.getMainLooper())
+    private var progressBar: SeekBar? = null
+    private var positionText: TextView? = null
+    private var timer: Runnable? = null
     private var playerView: PlayerView? = null
     private var playerContainer: FrameLayout? = null
 
@@ -56,6 +62,7 @@ class MainActivity : ComponentActivity() {
         })
         showShell()
         showHome()
+        ticker.post(object : Runnable { override fun run() { updateProgress(); ticker.postDelayed(this, 1000) } })
     }
     private fun shape(color: Int, radius: Float = 22f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }
     private fun label(s: String, size: Float = 16f, color: Int = Color.WHITE, bold: Boolean = false): TextView = TextView(this).apply {
@@ -97,7 +104,95 @@ class MainActivity : ComponentActivity() {
         mini.removeAllViews()
         val info = label("♫  $currentTitle", 13f, Color.WHITE, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         mini.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
+        info.setOnClickListener { showNowPlaying() }
         mini.addView(button(if (player.isPlaying) "Ⅱ" else "▶") { if (player.isPlaying) player.pause() else player.play(); refreshMini() })
+    }
+    private fun formatTime(ms: Long): String { val sec = (ms.coerceAtLeast(0) / 1000); return "%d:%02d".format(sec / 60, sec % 60) }
+    private fun updateProgress() {
+        if (!::player.isInitialized) return
+        val duration = player.duration.takeIf { it > 0 } ?: 0L
+        progressBar?.max = 1000
+        progressBar?.progress = if (duration > 0) ((player.currentPosition.coerceAtLeast(0) * 1000L) / duration).toInt().coerceIn(0, 1000) else 0
+        positionText?.text = "${formatTime(player.currentPosition)} / ${formatTime(duration)}"
+    }
+    private fun showNowPlaying() {
+        content.removeAllViews()
+        title("NOW PLAYING", "RoohuX immersive player")
+        val artwork = label(if (currentType == "video") "▣" else "♫", 100f, violet, true).apply {
+            gravity = Gravity.CENTER; background = shape(panel, dp(30).toFloat())
+        }
+        content.addView(artwork, LinearLayout.LayoutParams(-1, dp(230)))
+        addSpace(content, 24)
+        content.addView(label(currentTitle, 24f, Color.WHITE, true)); addSpace(content, 20)
+        positionText = label("0:00 / 0:00", 13f, pale)
+        content.addView(positionText)
+        progressBar = SeekBar(this).apply {
+            max = 1000
+            progressTintList = android.content.res.ColorStateList.valueOf(violet)
+            thumbTintList = android.content.res.ColorStateList.valueOf(violet)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser && player.duration > 0) player.seekTo(player.duration * progress / 1000L)
+                }
+                override fun onStartTrackingTouch(bar: SeekBar?) {}
+                override fun onStopTrackingTouch(bar: SeekBar?) {}
+            })
+        }
+        content.addView(progressBar); addSpace(content, 14)
+        val controls = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        controls.addView(button("↺  -10s") { player.seekTo((player.currentPosition - 10000).coerceAtLeast(0)) }, LinearLayout.LayoutParams(0, dp(58), 1f))
+        controls.addView(button("Ⅱ / ▶") { if (player.isPlaying) player.pause() else player.play(); refreshMini() }, LinearLayout.LayoutParams(0, dp(58), 1f))
+        controls.addView(button("+10s  ↻") { player.seekTo(player.currentPosition + 10000) }, LinearLayout.LayoutParams(0, dp(58), 1f))
+        content.addView(controls); addSpace(content, 18)
+        content.addView(button("♡  Add to favorites") { favorite(currentTitle, currentUrl, currentType) }); addSpace(content)
+        content.addView(button("☷  Add to playlist") { choosePlaylist(currentTitle, currentUrl, currentType) }); addSpace(content)
+        content.addView(button("◷  Sleep timer") { chooseSleepTimer() })
+        updateProgress()
+    }
+    private fun chooseSleepTimer() {
+        android.app.AlertDialog.Builder(this).setTitle("Stop playback after")
+            .setItems(arrayOf("Off", "15 minutes", "30 minutes", "60 minutes")) { _, which ->
+                timer?.let { ticker.removeCallbacks(it) }; timer = null
+                val minutes = when (which) { 1 -> 15; 2 -> 30; 3 -> 60; else -> 0 }
+                if (minutes > 0) {
+                    val stop = Runnable { player.pause(); refreshMini(); message("Sleep timer ended") }
+                    timer = stop; ticker.postDelayed(stop, minutes * 60_000L)
+                }
+                message(if (minutes > 0) "Sleep timer: ${minutes} minutes" else "Sleep timer off")
+            }.show()
+    }
+    private fun playlistNames(): org.json.JSONArray = try { org.json.JSONArray(prefs.getString("playlist_names", "[]")) } catch (_: Exception) { org.json.JSONArray() }
+    private fun choosePlaylist(name: String, url: String, type: String) {
+        val names = playlistNames()
+        val options = (0 until names.length()).map { names.optString(it) } + "＋ Create new playlist"
+        android.app.AlertDialog.Builder(this).setTitle("Add to playlist").setItems(options.toTypedArray()) { _, index ->
+            if (index == names.length()) createPlaylist(name, url, type)
+            else { saveMedia("playlist_" + names.optString(index), name, url, type); message("Saved to playlist") }
+        }.show()
+    }
+    private fun createPlaylist(name: String = "", url: String = "", type: String = "") {
+        val input = EditText(this).apply { hint = "Playlist name"; setSingleLine() }
+        android.app.AlertDialog.Builder(this).setTitle("New playlist").setView(input).setPositiveButton("Create") { _, _ ->
+            val title = input.text.toString().trim().take(40)
+            if (title.isNotBlank()) {
+                val names = playlistNames()
+                if ((0 until names.length()).none { names.optString(it) == title }) {
+                    names.put(title); prefs.edit().putString("playlist_names", names.toString()).apply()
+                }
+                if (url.isNotBlank()) saveMedia("playlist_" + title, name, url, type)
+                showLibrary()
+            }
+        }.setNegativeButton("Cancel", null).show()
+    }
+    private fun showPlaylist(name: String) {
+        content.removeAllViews(); title(name, "Your custom playlist")
+        showSaved("playlist_" + name, 500)
+        addSpace(content)
+        content.addView(button("Delete playlist") {
+            val names = playlistNames(); val remaining = org.json.JSONArray()
+            for (i in 0 until names.length()) if (names.optString(i) != name) remaining.put(names.optString(i))
+            prefs.edit().putString("playlist_names", remaining.toString()).remove("playlist_" + name).apply(); showLibrary()
+        })
     }
     private fun title(s: String, sub: String) { content.addView(label(s, 26f, Color.WHITE, true)); addSpace(content, 5); content.addView(label(sub, 13f, pale)); addSpace(content, 22) }
     private fun message(s: String) { status.text = s; Toast.makeText(this, s, Toast.LENGTH_SHORT).show() }
@@ -138,6 +233,14 @@ class MainActivity : ComponentActivity() {
         content.removeAllViews(); title("Your library", "All your music, saved in one place")
         card("▣  Play local files", "Choose music or video on your phone") { openLocal() }
         card("↓  Downloads", "Open Android Downloads") { showDownloads() }
+        addSpace(content, 16)
+        content.addView(label("YOUR PLAYLISTS", 12f, violet, true)); addSpace(content)
+        content.addView(button("＋  Create playlist") { createPlaylist() }); addSpace(content)
+        val names = playlistNames()
+        for (i in 0 until names.length()) {
+            val name = names.optString(i)
+            card("☷  " + name, "Open your playlist →") { showPlaylist(name) }
+        }
         addSpace(content, 16)
         content.addView(label("FAVORITES", 12f, violet, true)); addSpace(content)
         showSaved("favorites", 100)
@@ -236,6 +339,7 @@ class MainActivity : ComponentActivity() {
     private fun play(url: String, name: String, type: String) {
         saveMedia("history", name, url, type)
         currentTitle = name; currentUrl = url; currentType = type
+        progressBar = null; positionText = null
         player.setMediaItem(MediaItem.fromUri(Uri.parse(url))); player.prepare(); player.play()
         refreshMini(); message("Playing: $name")
         playerContainer?.let { (it.parent as? ViewGroup)?.removeView(it) }
@@ -300,5 +404,5 @@ class MainActivity : ComponentActivity() {
             play(uri.toString(), uri.lastPathSegment ?: "Local media", if (mime.startsWith("video")) "video" else "audio")
         }
     }
-    override fun onDestroy() { playerView?.player = null; player.release(); io.shutdownNow(); super.onDestroy() }
+    override fun onDestroy() { ticker.removeCallbacksAndMessages(null); playerView?.player = null; player.release(); io.shutdownNow(); super.onDestroy() }
 }
