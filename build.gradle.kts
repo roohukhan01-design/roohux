@@ -1,4 +1,7 @@
-plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+plugins {
+    id("com.android.application") version "8.7.3"
+    id("org.jetbrains.kotlin.android") version "2.0.21"
+}
 android {
     namespace = "com.roohu.roohux"
     compileSdk = 35
@@ -6,6 +9,10 @@ android {
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
+    sourceSets.getByName("main") {
+        manifest.srcFile("AndroidManifest.xml")
+        java.srcDirs(".")
+    }
 }
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
