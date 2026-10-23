@@ -11,7 +11,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
     sourceSets.getByName("main") {
         manifest.srcFile("AndroidManifest.xml")
-        java.srcDirs(".")
+        java.srcDirs("src/main/java")
+        kotlin.srcDirs("src/main/java")
     }
 }
 dependencies {
