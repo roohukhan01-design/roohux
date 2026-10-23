@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
     private var currentTitle = "Nothing playing"
     private var currentUrl = ""
     private var currentType = "audio"
-    private var activeTab = "Discover"
+    private var activeTab = "Home"
     private var playerView: PlayerView? = null
     private var playerContainer: FrameLayout? = null
 
@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
             }
         })
         showShell()
-        showDiscover()
+        showHome()
     }
     private fun shape(color: Int, radius: Float = 22f): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius }
     private fun label(s: String, size: Float = 16f, color: Int = Color.WHITE, bold: Boolean = false): TextView = TextView(this).apply {
@@ -85,8 +85,8 @@ class MainActivity : ComponentActivity() {
         mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = shape(panel); setPadding(dp(14), dp(12), dp(14), dp(12)) }
         root.addView(mini); addSpace(root, 10)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Discover", "Favorites", "Downloads", "About").forEach { tab ->
-            val item = label(tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Discover" -> showDiscover(); "Favorites" -> showFavorites(); "Downloads" -> showDownloads(); else -> showAbout() } } }
+        listOf("Home", "Search", "Library", "Settings").forEach { tab ->
+            val item = label(tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Home" -> showHome(); "Search" -> showDiscover(); "Library" -> showLibrary(); else -> showSettings() } } }
             nav.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
         root.addView(nav)
@@ -101,6 +101,63 @@ class MainActivity : ComponentActivity() {
     }
     private fun title(s: String, sub: String) { content.addView(label(s, 26f, Color.WHITE, true)); addSpace(content, 5); content.addView(label(sub, 13f, pale)); addSpace(content, 22) }
     private fun message(s: String) { status.text = s; Toast.makeText(this, s, Toast.LENGTH_SHORT).show() }
+    private fun showHome() {
+        content.removeAllViews(); title("Your soundspace", "Music, films and everything you love")
+        card("✦  Explore new music", "Discover public audio and video collections") { activeTab = "Search"; showShell(); showDiscover() }
+        card("♫  Your favorites", "Songs and films you saved") { activeTab = "Library"; showShell(); showLibrary() }
+        card("▣  Open media from phone", "Play your own audio and video files") { openLocal() }
+        addSpace(content, 16)
+        content.addView(label("CURATED FOR YOU", 12f, violet, true)); addSpace(content)
+        listOf("Jazz sessions" to "jazz", "Classical essentials" to "classical music", "Live concerts" to "live concert", "Documentary cinema" to "documentary").forEach { (name, query) ->
+            card("✦  $name", "Explore the collection →") { activeTab = "Search"; showShell(); search(query) }
+        }
+        addSpace(content, 16)
+        content.addView(label("RECENTLY PLAYED", 12f, violet, true)); addSpace(content)
+        showSaved("history", 6)
+    }
+    private fun openLocal() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE); putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*")) }
+        startActivityForResult(i, 100)
+    }
+    private fun stored(key: String): org.json.JSONArray = try { org.json.JSONArray(prefs.getString(key, "[]") ?: "[]") } catch (_: Exception) { org.json.JSONArray() }
+    private fun saveMedia(key: String, name: String, url: String, type: String) {
+        val arr = stored(key)
+        if ((0 until arr.length()).any { arr.optJSONObject(it)?.optString("url") == url }) return
+        arr.put(JSONObject().put("name", name).put("url", url).put("type", type))
+        prefs.edit().putString(key, arr.toString()).apply()
+    }
+    private fun showSaved(key: String, limit: Int) {
+        val arr = stored(key)
+        if (arr.length() == 0) content.addView(label("Nothing here yet.", 13f, pale))
+        for (i in 0 until minOf(arr.length(), limit)) {
+            val o = arr.optJSONObject(i) ?: continue
+            card("♫  " + o.optString("name"), "Tap to play") { play(o.optString("url"), o.optString("name"), o.optString("type")) }
+        }
+    }
+    private fun showLibrary() {
+        content.removeAllViews(); title("Your library", "All your music, saved in one place")
+        card("▣  Play local files", "Choose music or video on your phone") { openLocal() }
+        card("↓  Downloads", "Open Android Downloads") { showDownloads() }
+        addSpace(content, 16)
+        content.addView(label("FAVORITES", 12f, violet, true)); addSpace(content)
+        showSaved("favorites", 100)
+        addSpace(content, 16)
+        content.addView(label("RECENTLY PLAYED", 12f, violet, true)); addSpace(content)
+        showSaved("history", 25)
+        addSpace(content)
+        content.addView(button("Clear listening history") { prefs.edit().remove("history").apply(); showLibrary() })
+    }
+    private fun showSettings() {
+        content.removeAllViews(); title("Settings", "Make RoohuX your own")
+        card("Repeat playback", "Choose repeat mode") {
+            android.app.AlertDialog.Builder(this).setItems(arrayOf("Repeat off", "Repeat one", "Repeat all")) { _, i ->
+                player.repeatMode = when (i) { 1 -> Player.REPEAT_MODE_ONE; 2 -> Player.REPEAT_MODE_ALL; else -> Player.REPEAT_MODE_OFF }
+                message("Repeat mode updated")
+            }.show()
+        }
+        card("Shuffle playback", if (player.shuffleModeEnabled) "On" else "Off") { player.shuffleModeEnabled = !player.shuffleModeEnabled; showSettings() }
+        card("About RoohuX", "Developer Roohu • Version 3.0") { showAbout() }
+    }
     private fun showDiscover() {
         content.removeAllViews(); title("Find your next favorite", "Free-to-access audio & video from Internet Archive")
         val input = EditText(this).apply { hint = "Search songs, concerts, films..."; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(pale); background = shape(panel); setPadding(dp(14), dp(12), dp(14), dp(12)) }
@@ -108,8 +165,7 @@ class MainActivity : ComponentActivity() {
         content.addView(button("⌕   Search online") { val q = input.text.toString().trim(); if (q.isNotBlank()) search(q) else message("Enter a search term") })
         addSpace(content, 12)
         content.addView(button("▣   Open music or video from phone") {
-            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE); putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*")) }
-            startActivityForResult(i, 100)
+            openLocal()
         })
         addSpace(content, 26)
         content.addView(label("EXPLORE", 12f, violet, true)); addSpace(content)
@@ -178,6 +234,7 @@ class MainActivity : ComponentActivity() {
         content.addView(box); addSpace(content, 10)
     }
     private fun play(url: String, name: String, type: String) {
+        saveMedia("history", name, url, type)
         currentTitle = name; currentUrl = url; currentType = type
         player.setMediaItem(MediaItem.fromUri(Uri.parse(url))); player.prepare(); player.play()
         refreshMini(); message("Playing: $name")
@@ -223,7 +280,7 @@ class MainActivity : ComponentActivity() {
         addSpace(content); content.addView(label("Only download media when its license or rights allow it.", 13f, pale))
     }
     private fun showAbout() {
-        content.removeAllViews(); title("RoohuX", "Your music. Your videos. Your universe.")
+        content.removeAllViews(); title("RoohuX 3.0", "Your music. Your videos. Your universe.")
         card("✦  Built for personal enjoyment", "Streaming and local playback • No account required") {}
         card("Developer: Roohu", "Support: roohukhan01@gmail.com") {}
         content.addView(label("Privacy: Favorites are saved locally on your device. Online searches and streams contact archive.org. Downloads use Android Download Manager. No analytics or advertising SDKs are included.", 13f, pale))
@@ -232,7 +289,7 @@ class MainActivity : ComponentActivity() {
     private fun request(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 12000; c.readTimeout = 20000
-        c.setRequestProperty("User-Agent", "RoohuX/1.0 (personal media client)")
+        c.setRequestProperty("User-Agent", "RoohuX/3.0 (personal media client)")
         return try { c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
     }
     @Deprecated("Android activity result API")
