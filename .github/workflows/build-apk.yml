@@ -2,7 +2,7 @@ name: Build RoohuX APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, fix/android-build]
+    branches: [main, master, fix/android-build, development/roohux-v3]
 jobs:
   build:
     runs-on: ubuntu-latest
