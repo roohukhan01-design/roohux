@@ -1,6 +1,6 @@
 # RoohuX — Android Music & Video App
 
-**Version 1 source project (prototype).** Native Kotlin Android app, no paid API key required.
+**Version 2.0 source project (prototype).** Native Kotlin Android app, no paid API key required.
 
 ## Features implemented
 - Online search of Internet Archive public media catalog
@@ -12,6 +12,8 @@
 - GitHub Actions debug APK workflow
 
 ## Build APK on GitHub using your phone
+
+The `Build RoohuX APK` GitHub Actions workflow runs on pushes to `main` and can also be started manually from the Actions tab.
 1. Create a new GitHub repository named `RoohuX`.
 2. Extract the ZIP. Upload **the files and directories** to the repository root. GitHub web upload can accept selected files; the `.github/workflows/android.yml` directory structure must be preserved. Alternatively use GitHub's web editor to create workflow file.
 3. Open **Actions** > **Build RoohuX APK** > **Run workflow** (or push to main).
