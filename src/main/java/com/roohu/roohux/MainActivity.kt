@@ -16,6 +16,9 @@ import android.view.animation.DecelerateInterpolator
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var activeTab = "Discover"
     private var playerView: PlayerView? = null
     private var playerContainer: FrameLayout? = null
+    private var youtubeWebView: WebView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +76,8 @@ class MainActivity : ComponentActivity() {
     private fun addSpace(parent: LinearLayout, h: Int = 12) { parent.addView(View(this), LinearLayout.LayoutParams(1, dp(h))) }
     private fun dp(v: Int) = (resources.displayMetrics.density * v).toInt()
     private fun showShell() {
+        youtubeWebView?.apply { stopLoading(); destroy() }
+        youtubeWebView = null
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(20, 14, 38), bg, Color.rgb(8, 10, 20))); setPadding(dp(16), dp(14), dp(16), dp(8)) }
         setContentView(root)
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -90,8 +96,8 @@ class MainActivity : ComponentActivity() {
         mini = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(48, 31, 76), Color.rgb(29, 27, 49))).apply { cornerRadius = dp(20).toFloat(); setStroke(dp(1), Color.rgb(88, 65, 126)) }; setPadding(dp(14), dp(10), dp(10), dp(10)); elevation = dp(5).toFloat() }
         root.addView(mini); addSpace(root, 10)
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Discover", "Favorites", "Downloads", "About").forEach { tab ->
-            val item = label(if (tab == activeTab) "●  $tab" else tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Discover" -> showDiscover(); "Favorites" -> showFavorites(); "Downloads" -> showDownloads(); else -> showAbout() } } }
+        listOf("Discover", "YouTube", "Favorites", "Downloads", "About").forEach { tab ->
+            val item = label(if (tab == activeTab) "●  $tab" else tab, 12f, if (tab == activeTab) violet else pale, true).apply { gravity = Gravity.CENTER; setPadding(3, 12, 3, 12); setOnClickListener { activeTab = tab; showShell(); when (tab) { "Discover" -> showDiscover(); "YouTube" -> showYouTube(); "Favorites" -> showFavorites(); "Downloads" -> showDownloads(); else -> showAbout() } } }
             nav.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
         root.addView(nav)
@@ -248,6 +254,108 @@ class MainActivity : ComponentActivity() {
         arr.put(JSONObject().put("name", name).put("url", url).put("type", type))
         prefs.edit().putString("favorites", arr.toString()).apply(); message("Added to favorites")
     }
+    private fun showYouTube() {
+        player.pause()
+        refreshMini()
+        content.removeAllViews()
+        title("YouTube", "Search on YouTube, then play a video here")
+        content.addView(label("RoohuX uses YouTube's embedded player. It does not extract the audio stream.", 12f, pale))
+        addSpace(content, 12)
+        val input = EditText(this).apply {
+            hint = "Paste a YouTube video link or video ID"
+            setSingleLine()
+            setTextColor(Color.WHITE)
+            setHintTextColor(pale)
+            background = shape(panel)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        content.addView(input)
+        addSpace(content, 10)
+        content.addView(button("⌕   Search YouTube") {
+            val q = input.text.toString().trim()
+            if (q.isBlank()) {
+                message("Enter a song, artist, or video title")
+            } else {
+                try {
+                    val searchUrl = "https://www.youtube.com/results?search_query=" + URLEncoder.encode(q, "UTF-8")
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)))
+                } catch (e: Exception) {
+                    message("Could not open YouTube search")
+                }
+            }
+        })
+        addSpace(content, 10)
+        content.addView(button("▶   Play video in RoohuX") {
+            val id = extractYouTubeVideoId(input.text.toString().trim())
+            if (id == null) {
+                message("Paste a valid YouTube video link or 11-character video ID")
+            } else {
+                showYouTubeEmbed(id)
+            }
+        })
+        addSpace(content, 14)
+        content.addView(label("How to use: search YouTube, copy a video's link, return here, paste it, and tap Play video in RoohuX.", 12f, pale))
+        addSpace(content, 10)
+        content.addView(label("Availability and playback controls are determined by YouTube. This embedded player does not provide unrestricted downloads or background playback.", 12f, pale))
+    }
+
+    private fun extractYouTubeVideoId(value: String): String? {
+        if (value.matches(Regex("^[A-Za-z0-9_-]{11}$"))) return value
+        val patterns = listOf(
+            Regex("(?:youtu\\.be/)([A-Za-z0-9_-]{11})"),
+            Regex("(?:youtube(?:-nocookie)?\\.com)/(?:watch\\?v=|embed/|shorts/|live/)([A-Za-z0-9_-]{11})")
+        )
+        return patterns.firstNotNullOfOrNull { it.find(value)?.groupValues?.getOrNull(1) }
+    }
+
+    private fun showYouTubeEmbed(videoId: String) {
+        player.pause()
+        refreshMini()
+        content.removeAllViews()
+        title("Now on YouTube", "Playback provided by the official embedded player")
+        content.addView(button("←   Back to YouTube search") { showYouTube() })
+        addSpace(content, 12)
+        val web = WebView(this).apply {
+            setBackgroundColor(Color.BLACK)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = true
+            webChromeClient = WebChromeClient()
+            webViewClient = WebViewClient()
+            isFocusable = true
+            isFocusableInTouchMode = true
+        }
+        youtubeWebView = web
+        content.addView(web, LinearLayout.LayoutParams(-1, dp(235)))
+        val html = """
+            <!doctype html>
+            <html>
+            <head>
+              <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+              <style>
+                html,body{margin:0;padding:0;background:#000;width:100%;height:100%;overflow:hidden}
+                .player{position:absolute;inset:0}
+                iframe{width:100%;height:100%;border:0}
+              </style>
+            </head>
+            <body>
+              <div class="player">
+                <iframe
+                  src="https://www.youtube-nocookie.com/embed/$videoId?playsinline=1&controls=1&rel=0"
+                  title="YouTube video player"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                  allowfullscreen>
+                </iframe>
+              </div>
+            </body>
+            </html>
+        """.trimIndent()
+        web.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", null)
+        addSpace(content, 12)
+        content.addView(label("Use YouTube's on-player controls. Some videos may not allow embedding.", 12f, pale))
+    }
+
     private fun showFavorites() {
         content.removeAllViews(); title("Your favorites", "Saved on this device")
         val arr = org.json.JSONArray(prefs.getString("favorites", "[]"))
@@ -296,5 +404,5 @@ class MainActivity : ComponentActivity() {
             play(uri.toString(), uri.lastPathSegment ?: "Local media", if (mime.startsWith("video")) "video" else "audio")
         }
     }
-    override fun onDestroy() { playerView?.player = null; player.release(); io.shutdownNow(); super.onDestroy() }
+    override fun onDestroy() { youtubeWebView?.apply { stopLoading(); destroy() }; youtubeWebView = null; playerView?.player = null; player.release(); io.shutdownNow(); super.onDestroy() }
 }
